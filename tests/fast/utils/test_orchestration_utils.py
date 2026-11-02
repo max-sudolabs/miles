@@ -1,3 +1,4 @@
+import threading
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -229,7 +230,26 @@ class TestInitOrchestrationScript:
         launched = await _run_driver_with(monkeypatch, _EndingObserver, heard=heard)
 
         assert launched == dict(report_process_ends=True)
-        assert heard == ["workers stopped", "driver end_process", "end_run"]
+        assert heard == ["workers stopped", "driver end_process", "end_run", "tracking finished"]
+
+    async def test_a_hung_observer_does_not_keep_the_driver_from_finishing_its_trackers(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An observer whose end never returns would leave the driver, and with it the W&B or MLflow run, open."""
+        release = threading.Event()
+
+        class _HungObserver(observers.Observer):
+            def end_run(self, *, succeeded: bool) -> None:
+                release.wait()
+
+        monkeypatch.setattr(observers, "END_RUN_TIMEOUT_S", 0.1)
+        heard: list[str] = []
+        try:
+            await _run_driver_with(monkeypatch, _HungObserver, heard=heard)
+        finally:
+            release.set()
+
+        assert heard == ["workers stopped", "tracking finished"]
 
     async def test_workers_report_their_end_only_when_an_observer_takes_it(
         self, monkeypatch: pytest.MonkeyPatch
@@ -294,7 +314,7 @@ async def _run_driver_with(
     monkeypatch.setattr(orchestration_utils, "configure_logger", lambda _args, *, source: None)
     monkeypatch.setattr(orchestration_utils, "maybe_start_periodic_pyspy_dump", lambda: None)
     monkeypatch.setattr(orchestration_utils, "init_tracking", lambda _args: None)
-    monkeypatch.setattr(orchestration_utils, "finish_tracking", lambda: None)
+    monkeypatch.setattr(orchestration_utils, "finish_tracking", lambda: heard.append("tracking finished"))
     monkeypatch.setattr(orchestration_utils, "launch_worker_manager", fake_launch_worker_manager)
     monkeypatch.setattr(orchestration_utils, "shutdown_worker_manager", fake_shutdown_worker_manager)
     monkeypatch.setattr(orchestration_utils, "compute_backend_capability", lambda _args: object())

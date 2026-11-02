@@ -1,10 +1,12 @@
 """Run observers hear the run in plain data, and nothing an observer does can break it."""
 
 import logging
+import threading
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from miles.rollout.agentic.sandbox_reports import report_sandbox
 from miles.utils import observers as observers_module
@@ -152,6 +154,36 @@ def test_start_run_reports_every_argument_as_plain_data_without_secrets(install)
     assert run["args"]["server"]["port"] == 30000, "a nested config must arrive as data, not its repr"
     for secret in ("wandb-secret", "server-secret"):
         assert secret not in str(run["args"]), "observers must not receive the run's secrets"
+
+
+def test_start_run_survives_config_values_json_cannot_hold(install):
+    """One value pydantic cannot dump as JSON, or one that cannot be copied, must not cost every observer its start."""
+    recorder = _Recorder()
+    install(recorder)
+
+    class _Handle:
+        def __str__(self) -> str:
+            return "handle"
+
+    class _EngineConfig(BaseModel):
+        model_config = ConfigDict(arbitrary_types_allowed=True)
+        api_key: str
+        handle: _Handle
+
+    @dataclass
+    class _Paths:
+        lock: threading.Lock
+        root: str = "/data"
+
+    args = SimpleNamespace(
+        engine=_EngineConfig(api_key="engine-secret", handle=_Handle()), paths=_Paths(lock=threading.Lock())
+    )
+    observers_module.start_run(run_uuid="0123456789abcdef", args=args)
+
+    [(_, run)] = [call for call in recorder.calls if call[0] == "start_run"]
+    assert run["args"]["engine"]["handle"] == "handle"
+    assert run["args"]["paths"]["root"] == "/data"
+    assert "engine-secret" not in str(run["args"]), "the fallback must still reach the secrets inside a config"
 
 
 def _sample(**overrides):

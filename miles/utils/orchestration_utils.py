@@ -1,5 +1,6 @@
 import logging
 import sys
+import threading
 from dataclasses import dataclass
 from functools import partial
 
@@ -104,6 +105,17 @@ def init_orchestration_script(startup_info: OrchestratorStartupInfo, *, disposer
 
 
 def _end_observed_run(succeeded: bool) -> None:
+    # a daemon thread, so a hung observer cannot keep the driver from exiting or from finishing its trackers
+    ending = threading.Thread(target=_end_observers, args=(succeeded,), name="end-run-observers", daemon=True)
+    ending.start()
+    ending.join(timeout=observers.END_RUN_TIMEOUT_S)
+    if ending.is_alive():
+        logger.warning(
+            f"The run observers did not end within {observers.END_RUN_TIMEOUT_S:.0f}s; the driver exits without them"
+        )
+
+
+def _end_observers(succeeded: bool) -> None:
     observers.Observers().end_process()
     observers.Observers().end_run(succeeded=succeeded)
 

@@ -29,12 +29,14 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields as dataclass_fields
+from dataclasses import is_dataclass
 from importlib.metadata import entry_points
 from typing import Any, ClassVar, Literal, TypedDict, get_args
 
 import numpy as np
 from pydantic import BaseModel
+from pydantic_core import PydanticSerializationError
 
 from miles.utils.env_report.redaction import redact_config_values
 from miles.utils.lifecycle import TrajectoryLifecycle
@@ -46,6 +48,8 @@ logger = logging.getLogger(__name__)
 ENTRY_POINT_GROUP = "miles.observers"
 # an estimate, not a measurement: sending a few steps of buffered reports takes seconds on a cluster network
 END_PROCESS_TIMEOUT_S = 30.0
+# an estimate, not a measurement: a run's last uploads can take minutes, and a hung observer delays the exit this long
+END_RUN_TIMEOUT_S = 300.0
 
 
 class RunRefusedError(Exception):
@@ -188,7 +192,8 @@ class Observer:
         killed once this returns or ``END_PROCESS_TIMEOUT_S`` passes."""
 
     def end_run(self, *, succeeded: bool) -> None:
-        """Driver only, as the run ends either way."""
+        """Driver only, as the run ends either way. The driver exits once this returns or
+        ``END_RUN_TIMEOUT_S`` has passed since its own ``end_process`` began."""
 
 
 class Observers(metaclass=SingletonMeta):
@@ -345,9 +350,16 @@ def _plain_args(args) -> dict[str, Any]:
 def _plain_value(value) -> Any:
     # nested configs become dicts, so redaction reaches the secrets inside them
     if isinstance(value, BaseModel):
-        return value.model_dump(mode="json")
+        try:
+            return value.model_dump(mode="json")
+        except PydanticSerializationError:
+            # json.dumps hands each value pydantic cannot dump back here, where it becomes its str
+            return value.model_dump()
     if is_dataclass(value) and not isinstance(value, type):
-        return asdict(value)
+        return {
+            field.name: getattr(value, field.name)  # config-access-exempt: attribute selected at runtime from name
+            for field in dataclass_fields(value)
+        }
     return str(value)
 
 
