@@ -289,9 +289,12 @@ _HF_LORA_MODELS = {
     "muse_glimmer": _HfLoraModelSpec(
         _dense_targets, layer_prefix="model.language_model.layers.*", unwrap_text_config=True
     ),
-    # attention only: the routed experts are grouped weights, and there are no dense or shared experts
+    # every layer is MoE without dense or shared experts; the packed routed experts take the shared-outer
+    # layout and reach the engines merged into the base (--lora-merge-for-rollout)
     "muse_spark": _HfLoraModelSpec(
-        lambda config: (_QKVO_ATTENTION, ()), layer_prefix="model.language_model.layers.*", unwrap_text_config=True
+        lambda config: (_QKVO_ATTENTION, _PACKED_EXPERTS),
+        layer_prefix="model.language_model.layers.*",
+        unwrap_text_config=True,
     ),
     "mimo_v2": _HfLoraModelSpec(_mimo_v2_targets),
     "inkling_text": _HfLoraModelSpec(_inkling_targets, default_train_unembed=True),

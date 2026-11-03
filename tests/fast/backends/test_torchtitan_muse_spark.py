@@ -117,16 +117,16 @@ def test_the_adapter_names_every_decoder_tensor_of_the_checkpoint(tmp_path):
     assert expected <= named
 
 
-def test_all_linear_targets_attention_only(tmp_path):
-    """Routed experts are grouped weights the torchtitan backend does not adapt."""
+def test_all_linear_targets_attention_and_the_packed_routed_experts(tmp_path):
+    """Every layer is MoE without dense or shared experts, and the checkpoint packs the experts."""
     from miles.utils.lora.hf_lora_targets import resolve_hf_lora_targets
 
     _write_checkpoint_config(tmp_path)
     hf_config = json.loads((tmp_path / "config.json").read_text())
-    prefix = "model.language_model.layers.*.self_attn."
+    prefix = "model.language_model.layers.*."
     assert resolve_hf_lora_targets(hf_config, target_modules=["all-linear"]) == [
-        f"{prefix}{p}" for p in ["q_proj", "k_proj", "v_proj", "o_proj"]
-    ]
+        f"{prefix}self_attn.{p}" for p in ["q_proj", "k_proj", "v_proj", "o_proj"]
+    ] + [f"{prefix}mlp.experts.{p}" for p in ["gate_up_proj", "down_proj"]]
 
 
 def test_attention_lora_adapts_the_decoder_projections_only(tmp_path):
@@ -146,6 +146,32 @@ def test_attention_lora_adapts_the_decoder_projections_only(tmp_path):
     )
     adapted = {fqn for fqn, cfg, _, _ in config.traverse(Linear.Config) if hasattr(cfg, "rank")}
     assert adapted == {f"layers.{i}.attention.{p}" for i in range(4) for p in ("qkv_linear.wqkv", "wo")}
+
+
+def test_all_linear_adapts_the_packed_routed_experts_in_the_shared_outer_layout(tmp_path):
+    """The packed experts become shared-outer grouped projections next to the attention ones."""
+    from torchtitan.models.common.linear import GroupedLinear, Linear
+
+    from miles.backends.torchtitan_utils.lora import convert_model_config
+    from miles.utils.lora.hf_lora_targets import LORA_TARGET_GROUPS, resolve_hf_lora_targets
+
+    hf_config = {"model_type": "muse_spark", "text_config": _HF_TEXT_CONFIG}
+    targets = resolve_hf_lora_targets(hf_config)
+    layout = resolve_hf_lora_targets(hf_config, target_modules=list(LORA_TARGET_GROUPS))
+    config = convert_model_config(
+        _model_config(tmp_path), hf_targets=targets, layout=layout, rank=8, alpha=16, experts_shared_outer=True
+    )
+    experts = {
+        fqn: cfg.shared_factor for fqn, cfg, _, _ in config.traverse(GroupedLinear.Config) if hasattr(cfg, "rank")
+    }
+    assert experts == {
+        f"layers.{i}.feed_forward.routed_experts.{p}": factor
+        for i in range(4)
+        for p, factor in (("w13", "lora_a"), ("w2", "lora_b"))
+    }
+    assert {fqn for fqn, cfg, _, _ in config.traverse(Linear.Config) if hasattr(cfg, "rank")} == {
+        f"layers.{i}.attention.{p}" for i in range(4) for p in ("qkv_linear.wqkv", "wo")
+    }
 
 
 def test_the_hf_config_loads_without_a_transformers_class(tmp_path):
