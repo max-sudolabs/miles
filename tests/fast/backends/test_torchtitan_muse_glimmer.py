@@ -170,10 +170,17 @@ def test_a_bare_gate_proj_target_cannot_reach_the_attention_output_gate(tmp_path
     layout = resolve_hf_lora_targets(hf_config, target_modules=list(LORA_TARGET_GROUPS))
     with pytest.raises(ValueError, match="self_attn.gate_proj"):
         convert_model_config(
-            _model_config(tmp_path), hf_targets=["gate_proj", "up_proj"], layout=layout, rank=8, alpha=16
+            _model_config(tmp_path),
+            hf_targets=["gate_proj", "up_proj"],
+            layout=layout,
+            rank=8,
+            alpha=16,
+            experts_shared_outer=False,
         )
     attention = resolve_hf_lora_targets(hf_config, target_modules=["attn"])
-    convert_model_config(_model_config(tmp_path), hf_targets=attention, layout=layout, rank=8, alpha=16)
+    convert_model_config(
+        _model_config(tmp_path), hf_targets=attention, layout=layout, rank=8, alpha=16, experts_shared_outer=False
+    )
 
 
 def test_the_sequence_may_not_exceed_the_checkpoints_rotary_table(tmp_path):

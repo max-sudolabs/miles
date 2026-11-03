@@ -19,6 +19,8 @@ from miles.backends.training_utils.weight_update.hf_weight_iterator.checkpoint_t
 from miles.platforms import current_platform
 from miles.utils.hf_utils.config import hf_text_config, load_hf_config
 
+_GROUPED_EXPERTS = ".routed_experts."
+
 
 class TitanHfWeightIterator(HfWeightIteratorBase):
     forced_placement = None
@@ -79,7 +81,8 @@ def hf_adapter_weights(trainer, *, complete_across_pp: bool) -> Iterator[tuple[s
     """The LoRA adapter as HF PEFT tensors, gathered like the base weights. Only the adapter
     tensors visit the GPU, so an offloaded frozen base stays on the host."""
     adapter_state = {
-        k: v.to(current_platform.current_device())
+        # a routed-expert factor is split by expert under EP; the adapter restacks the full tensor
+        k: gather_full_param(v) if _GROUPED_EXPERTS in k else v.to(current_platform.current_device())
         for part in trainer.model_parts
         for k, v in part.state_dict().items()
         if lora_names.is_adapter_key(k)
@@ -96,9 +99,6 @@ def _state_dict_adapter(trainer):
 @functools.cache
 def _stage_process_groups(stage_ranks: tuple[tuple[int, ...], ...]) -> tuple:
     return tuple(dist.new_group(list(ranks)) for ranks in stage_ranks)
-
-
-_GROUPED_EXPERTS = ".routed_experts."
 
 
 def _hf_weights_on_device(trainer, *, complete_across_pp: bool) -> Iterator[tuple[str, torch.Tensor]]:
