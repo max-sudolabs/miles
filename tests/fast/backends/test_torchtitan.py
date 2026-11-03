@@ -51,6 +51,24 @@ def _args(**overrides) -> Namespace:
         lora_adapter_path=None,
         lora_train_only=False,
         colocate_memory_peak_device="cpu",
+        # read by the padded-rows loss layout's startup check on a static-shape platform
+        train_backend="torchtitan",
+        loss_type="policy_loss",
+        qkv_format="thd",
+        advantage_estimator="grpo",
+        entropy_coef=0.0,
+        tensor_model_parallel_size=1,
+        true_on_policy_mode=False,
+        allgather_cp=False,
+        use_sampling_support_replay=False,
+        use_rollout_routing_replay=False,
+        use_opsm=False,
+        use_tis=False,
+        get_mismatch_metrics=False,
+        use_opd=False,
+        custom_pg_loss_reducer_function_path=None,
+        dump_details=None,
+        multi_lora=False,
     )
     return Namespace(**{**base, **overrides})
 
@@ -94,18 +112,22 @@ def test_a_tpu_microbatch_cannot_outgrow_the_largest_length_bucket(monkeypatch):
     validate_torchtitan_args(_args(use_dynamic_batch_size=False, micro_batch_size=1, log_probs_backend="torch"))
 
 
-def test_the_triton_log_prob_kernel_is_refused_on_tpu(monkeypatch):
+def test_the_tpu_fused_log_prob_runs_on_padded_rows_only(monkeypatch):
     monkeypatch.setattr(torch, "__version__", "2.13.0")
     _on_tpu(monkeypatch)
-    with pytest.raises(ValueError, match="Triton"):
-        validate_torchtitan_args(_args(use_dynamic_batch_size=False, log_probs_backend="fused"))
+    tpu_fused = dict(use_dynamic_batch_size=False, log_probs_backend="fused", entropy_coef=0.0)
+    validate_torchtitan_args(_args(**tpu_fused))
+    with pytest.raises(ValueError, match="scores padded rows"):
+        validate_torchtitan_args(_args(**tpu_fused, loss_type="sft_loss"))
+    with pytest.raises(ValueError, match="entropy-coef"):
+        validate_torchtitan_args(_args(**{**tpu_fused, "entropy_coef": 0.01}))
 
 
 def test_splash_attention_needs_a_tpu_and_whole_1024_token_tiles(monkeypatch):
     monkeypatch.setattr(torch, "__version__", "2.13.0")
     with pytest.raises(ValueError, match="TPU only"):
         validate_torchtitan_args(_args(titan_tpu_attention="splash"))
-    monkeypatch.setattr(titan_arguments.accelerator, "IS_TPU", True)
+    _on_tpu(monkeypatch)
     splash = dict(titan_tpu_attention="splash", use_dynamic_batch_size=False, log_probs_backend="torch")
     with pytest.raises(ValueError, match="multiple of 1024"):
         validate_torchtitan_args(_args(**splash, seq_length=3000, rollout_max_context_len=3000))

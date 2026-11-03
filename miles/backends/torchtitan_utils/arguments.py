@@ -4,7 +4,7 @@ import torch
 
 from miles import platforms
 from miles.backends.fsdp_utils.arguments import FSDPArgs, build_dataclass_parser, load_args_from_parser
-from miles.backends.training_utils.loss.hub.response_layout import validate_response_layout_args
+from miles.backends.training_utils.loss.hub.response_layout import padded_rows_enabled, validate_response_layout_args
 from miles.utils.lora.utils import is_lora_enabled, lora_rollout_enabled
 
 _TPU_ATTENTION_BACKENDS = ("sdpa_blocks", "splash")
@@ -75,9 +75,12 @@ def validate_torchtitan_args(args) -> None:
             f"--titan-tpu-attention splash tiles the sequence in 1024-token blocks; --seq-length {args.seq_length} "
             "is not a multiple of 1024"
         )
-    if args.log_probs_backend == "fused" and not platform.triton_kernels:
+    # without Triton, the fused log-prob op is a compiled program of the padded-rows loss layout
+    if args.log_probs_backend == "fused" and not platform.triton_kernels and not padded_rows_enabled(args):
         raise ValueError(
-            f"--log-probs-backend fused is a Triton kernel; on {platform.device_type} use --log-probs-backend torch"
+            f"--log-probs-backend fused on {platform.device_type} scores padded rows "
+            f"(loss/hub/response_layout.py), which --loss-type {args.loss_type} does not use; "
+            "use --log-probs-backend torch"
         )
     # without dynamic shapes, packed microbatches are padded to a power-of-two bucket capped at --seq-length
     if not platforms.current_platform.dynamic_shapes:
