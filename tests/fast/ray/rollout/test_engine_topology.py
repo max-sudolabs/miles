@@ -182,8 +182,7 @@ async def test_report_groups_multinode_engines_and_dedups(recorder):
     await reporter.report_if_changed(servers, provider=provider)  # recovery: same worker, new generation
     assert len(recorder.topologies) == 2
 
-    # Counting the reports says one fired, not what it carried: the fingerprint watches the
-    # worker while the addr comes from the cell, so a report can still carry stale engines.
+    # the report fires on a worker change but reads addrs from the cells, so check what it carried
     reported = recorder.topologies[1]
     assert [e["addr"] for e in reported] == ["http://a:1", "http://b:1"]
     assert reported[1]["gpus"] == [["node-a", 2], ["node-a", 3]]

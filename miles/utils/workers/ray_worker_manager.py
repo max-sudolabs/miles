@@ -448,7 +448,7 @@ class _BaseActorManager(Generic[SpecT]):
             return
 
         await self._shutdown_gracefully()
-        # a worker stuck in a long call makes this wait the whole timeout; only runs observing process ends pay it
+        # a worker stuck in a long call can make this wait the whole timeout; only runs observing process ends pay it
         if self.manager.report_process_ends:
             await self._report_process_end()
 

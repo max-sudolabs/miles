@@ -254,7 +254,7 @@ class TestInitOrchestrationScript:
     async def test_workers_report_their_end_only_when_an_observer_takes_it(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A worker busy in a long call makes its stop wait the whole timeout, which an observer of metrics alone does not need."""
+        """A worker busy in a long call can make its stop wait the whole timeout, which an observer of metrics alone does not need."""
 
         class _MetricsObserver(observers.Observer):
             def metrics(self, metrics, *, step_key: str, step: int | None) -> None:

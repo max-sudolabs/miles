@@ -1433,7 +1433,7 @@ class TestStopDetails:
     async def test_a_run_whose_observers_ignore_process_ends_kills_its_workers_without_asking_them(
         self, fake_ray_cluster: FakeRayCluster
     ):
-        """A worker stuck in a collective answers only after the timeout, a wait no run should pay for nothing."""
+        """Asking a worker stuck in a collective can cost its stop the whole timeout, wasted when no observer takes process ends."""
         manager = await _launch([_make_spec("engine")])
 
         await manager._pools["engine"].cells[0].stop()

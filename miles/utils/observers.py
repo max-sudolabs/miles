@@ -14,8 +14,9 @@ miles stops a worker it launched, it calls ``end_process`` there and kills the
 worker once that returns or ``END_PROCESS_TIMEOUT_S`` passes. The driver's
 ``end_process`` and then ``end_run`` come after every worker has stopped, so
 every worker's ``end_process`` has returned or timed out before ``end_run``. A
-process that crashes, and a worker the driver does not launch (a Kubernetes
-run's), get no ``end_process``.
+process that crashes, a worker that fault tolerance kills to recover from an
+error, and a worker the driver does not launch (a Kubernetes run's) get no
+``end_process``.
 
 The environment variables ``start_run`` returns are set in every worker process
 the driver launches; they are logged and kept in Ray's job metadata, so they
@@ -189,7 +190,8 @@ class Observer:
 
     def end_process(self) -> None:
         """The process is about to end: send or save what it still holds. A worker is
-        killed once this returns or ``END_PROCESS_TIMEOUT_S`` passes."""
+        killed once this returns or ``END_PROCESS_TIMEOUT_S`` passes. This can run on a
+        thread of its own while another thread is still reporting an event."""
 
     def end_run(self, *, succeeded: bool) -> None:
         """Driver only, as the run ends either way. The driver exits once this returns or
