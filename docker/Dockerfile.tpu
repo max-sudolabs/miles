@@ -12,10 +12,10 @@ FROM lmsysorg/sglang:${SGLANG_TPU_IMAGE_TAG}
 # ======================================== Arguments =============================================
 
 ARG SGLANG_TPU_REPO=sgl-project/sglang-torchtpu
-# sglang-torchtpu main (2026-11-03) plus docker/tpu_patch/sglang_torchtpu_*.patch (sgl-project/sglang-torchtpu#1851, the
-# cross-chip TP all-gather fix, and #1884, the ICI weight receiver for --update-weight-transfer-mode ici); drop a patch
-# once main has its PR, and swap the commit for a release image tag once one ships.
-ARG SGLANG_TPU_COMMIT=92f8c6849016acbd1c6f3f106bbe37f2e84b100e
+# sglang-torchtpu main (2026-11-04, with sgl-project/sglang-torchtpu#1884, the ICI weight receiver for
+# --update-weight-transfer-mode ici) plus docker/tpu_patch/sglang_torchtpu_*.patch (#1851, the cross-chip TP all-gather
+# fix); drop a patch once main has its PR, and swap the commit for a release image tag once one ships.
+ARG SGLANG_TPU_COMMIT=6606371a898d6f259dba08a99672d80cea450f68
 ARG TORCH_VERSION=2.14.1
 ARG TORCHVISION_VERSION=0.29.1
 # the triton torch 2.14 pairs with; torchtitan imports triton unconditionally
